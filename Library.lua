@@ -1063,14 +1063,23 @@ type IconModule = {
     GetAsset: (Name: string) -> Icon?,
 }
 
-local FetchIcons, Icons = pcall(function()
-    return (loadstring(
-        game:HttpGet("https://raw.githubusercontent.com/deividcomsono/lucide-roblox-direct/refs/heads/main/source.lua")
-    ) :: () -> IconModule)()
-end)
+local FetchIcons, Icons = false, nil
+
+do
+    local Success, Module = pcall(function()
+        return (loadstring(
+            game:HttpGet("https://raw.githubusercontent.com/deividcomsono/lucide-roblox-direct/refs/heads/main/source.lua")
+        ) :: () -> IconModule)()
+    end)
+
+    if Success and typeof(Module) == "table" and typeof(Module.GetAsset) == "function" then
+        FetchIcons = true
+        Icons = Module
+    end
+end
 
 function Library:GetIcon(IconName: string)
-    if not FetchIcons then
+    if not FetchIcons or not Icons then
         return
     end
 
@@ -2577,6 +2586,12 @@ local KeyIcon = Library:GetIcon("key")
 local MoveIcon = Library:GetIcon("move")
 
 function Library:SetIconModule(module: IconModule)
+    if typeof(module) ~= "table" or typeof(module.GetAsset) ~= "function" then
+        FetchIcons = false
+        Icons = nil
+        return
+    end
+
     FetchIcons = true
     Icons = module
 
