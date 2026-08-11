@@ -832,7 +832,7 @@ export type Window = {
     IsSidebarCompacted: (self: Window) -> boolean,
     GetSidebarWidth: (self: Window) -> number,
     SetSidebarWidth: (self: Window, Width: number) -> (),
-    SetCompact: (self: Window, State: boolean) -> (),
+    SetCompact: (self: Window, State: boolean, Duration: number?) -> (),
     ShowTabInfo: (self: Window, Name: string, Description: string) -> (),
     HideTabInfo: (self: Window) -> (),
     AddTab: (

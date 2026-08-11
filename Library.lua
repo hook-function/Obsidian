@@ -8374,20 +8374,23 @@ function Library:CreateWindow(WindowInfo)
         end
     end
 
-    function Window:IsSidebarCompacted()
-        return IsCompact
+    local SidebarAnimConnection: RBXScriptConnection? = nil
+    local SidebarAnimTarget: number? = nil
+
+    local function CancelSidebarAnimation()
+        if SidebarAnimConnection then
+            SidebarAnimConnection:Disconnect()
+            SidebarAnimConnection = nil
+        end
+        SidebarAnimTarget = nil
     end
 
-    function Window:SetCompact(State)
-        Window:SetSidebarWidth(State and WindowInfo.SidebarCompactWidth or LastExpandedWidth)
+    local function ClampSidebarWidth(Width)
+        return math.clamp(Width, 48, MainFrame.Size.X.Offset - WindowInfo.MinContainerWidth - 1)
     end
 
-    function Window:GetSidebarWidth()
-        return Tabs.Size.X.Offset
-    end
-
-    function Window:SetSidebarWidth(Width)
-        Width = math.clamp(Width, 48, MainFrame.Size.X.Offset - WindowInfo.MinContainerWidth - 1)
+    local function SetSidebarWidthRaw(Width)
+        Width = ClampSidebarWidth(Width)
 
         DividerLine.Position = UDim2.fromOffset(Width, 0)
 
@@ -8396,11 +8399,82 @@ function Library:CreateWindow(WindowInfo)
         Tabs.Size = UDim2.new(0, Width, 1, -70)
         Container.Size = UDim2.new(1, -Width - 1, 1, -70)
 
+        return Width
+    end
+
+    local function AnimateSidebarWidth(TargetWidth: number, Duration: number?)
+        if SidebarAnimConnection and SidebarAnimTarget == TargetWidth then
+            return
+        end
+
+        CancelSidebarAnimation()
+
+        local StartWidth = Tabs.Size.X.Offset
+        TargetWidth = ClampSidebarWidth(TargetWidth)
+        SidebarAnimTarget = TargetWidth
+
+        if StartWidth == TargetWidth then
+            if WindowInfo.EnableCompacting then
+                ApplyCompact()
+            end
+            if not IsCompact then
+                LastExpandedWidth = TargetWidth
+            end
+            return
+        end
+
+        if not MainFrame.Parent then
+            return
+        end
+
+        Duration = math.max(0.05, Duration or 0.25)
+        local StartTime = os.clock()
+
+        SidebarAnimConnection = RunService.RenderStepped:Connect(function()
+            if not MainFrame.Parent then
+                CancelSidebarAnimation()
+                return
+            end
+
+            local T = math.min((os.clock() - StartTime) / Duration, 1)
+            T = 1 - (1 - T) * (1 - T)
+
+            SetSidebarWidthRaw(StartWidth + (TargetWidth - StartWidth) * T)
+
+            if T >= 1 then
+                CancelSidebarAnimation()
+
+                if WindowInfo.EnableCompacting then
+                    ApplyCompact()
+                end
+                if not IsCompact then
+                    LastExpandedWidth = TargetWidth
+                end
+            end
+        end)
+    end
+
+    function Window:IsSidebarCompacted()
+        return IsCompact
+    end
+
+    function Window:SetCompact(State: boolean, Duration: number?)
+        AnimateSidebarWidth(State and WindowInfo.SidebarCompactWidth or LastExpandedWidth, Duration)
+    end
+
+    function Window:GetSidebarWidth()
+        return Tabs.Size.X.Offset
+    end
+
+    function Window:SetSidebarWidth(Width)
+        CancelSidebarAnimation()
+        SetSidebarWidthRaw(Width)
+
         if WindowInfo.EnableCompacting then
             ApplyCompact()
         end
         if not IsCompact then
-            LastExpandedWidth = Width
+            LastExpandedWidth = Tabs.Size.X.Offset
         end
     end
 
@@ -10271,7 +10345,7 @@ function Library:CreateWindow(WindowInfo)
                 if Width > Threshold then
                     Window:SetSidebarWidth(math.max(Width, WindowInfo.MinSidebarWidth))
                 else
-                    Window:SetSidebarWidth(WindowInfo.SidebarCompactWidth)
+                    AnimateSidebarWidth(WindowInfo.SidebarCompactWidth)
                 end
             end
         end))
