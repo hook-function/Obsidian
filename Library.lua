@@ -224,7 +224,7 @@ local Library = {
     Animations = {
         ToggleWindow = false,
         TabSwitch = false,
-        Groupbox = false,
+        Groupbox = true,
         Dropdown = false,
         KeyPicker = false
     },
@@ -382,6 +382,7 @@ local Templates = {
 
         EnableSidebarResize = false,
         EnableCompacting = true,
+        EnableTitleToggleCompact = true,
         DisableCompactingSnap = false,
         SidebarCompacted = false,
         MinContainerWidth = 256,
@@ -401,7 +402,7 @@ local Templates = {
         Animations = {
             ToggleWindow = false,
             TabSwitch = false,
-            Groupbox = false,
+            Groupbox = true,
             Dropdown = false,
             KeyPicker = false
         },
@@ -8543,6 +8544,7 @@ function Library:CreateWindow(WindowInfo)
         --// Title \\--
         TitleHolder = New("Frame", {
             BackgroundTransparency = 1,
+            ClipsDescendants = true,
             Size = UDim2.new(0, InitialLeftWidth, 1, 0),
             Parent = TopBar,
         })
@@ -9009,15 +9011,7 @@ function Library:CreateWindow(WindowInfo)
         return IsCompact
     end
 
-    function Window:SetCompact(State)
-        Window:SetSidebarWidth(State and WindowInfo.SidebarCompactWidth or LastExpandedWidth)
-    end
-
-    function Window:GetSidebarWidth()
-        return Tabs.Size.X.Offset
-    end
-
-    function Window:SetSidebarWidth(Width)
+    local function SetSidebarWidthRaw(Width)
         Width = math.clamp(Width, 48, MainFrame.Size.X.Offset - WindowInfo.MinContainerWidth - 1)
 
         DividerLine.Position = UDim2.fromOffset(Width, 0)
@@ -9027,12 +9021,134 @@ function Library:CreateWindow(WindowInfo)
         Tabs.Size = UDim2.new(0, Width, 1, -70)
         Container.Size = UDim2.new(1, -Width - 1, 1, -70)
 
+        return Width
+    end
+
+    local SidebarAnimConnection: RBXScriptConnection? = nil
+    local SidebarAnimTarget: number? = nil
+
+    local function CancelSidebarAnimation()
+        if SidebarAnimConnection then
+            SidebarAnimConnection:Disconnect()
+            SidebarAnimConnection = nil
+        end
+        SidebarAnimTarget = nil
+    end
+
+    local function AnimateSidebarWidth(TargetWidth: number, Duration: number?)
+        if SidebarAnimConnection and SidebarAnimTarget == TargetWidth then
+            return
+        end
+
+        CancelSidebarAnimation()
+
+        local StartWidth = Tabs.Size.X.Offset
+        TargetWidth = math.clamp(TargetWidth, 48, MainFrame.Size.X.Offset - WindowInfo.MinContainerWidth - 1)
+        SidebarAnimTarget = TargetWidth
+
+        if StartWidth == TargetWidth then
+            if WindowInfo.EnableCompacting then
+                ApplyCompact()
+            end
+            if not IsCompact then
+                LastExpandedWidth = TargetWidth
+            end
+            return
+        end
+
+        if not MainFrame.Parent then
+            return
+        end
+
+        Duration = math.max(0.05, Duration or 0.25)
+        local StartTime = os.clock()
+
+        SidebarAnimConnection = RunService.RenderStepped:Connect(function()
+            if not MainFrame.Parent then
+                CancelSidebarAnimation()
+                return
+            end
+
+            local T = math.min((os.clock() - StartTime) / Duration, 1)
+            T = 1 - (1 - T) * (1 - T)
+
+            SetSidebarWidthRaw(StartWidth + (TargetWidth - StartWidth) * T)
+
+            if T >= 1 then
+                CancelSidebarAnimation()
+
+                if WindowInfo.EnableCompacting then
+                    ApplyCompact()
+                end
+                if not IsCompact then
+                    LastExpandedWidth = TargetWidth
+                end
+            end
+        end)
+    end
+
+    function Window:SetCompact(State, Duration)
+        if Library.Animations and Library.Animations.Groupbox and Duration ~= 0 then
+            AnimateSidebarWidth(State and WindowInfo.SidebarCompactWidth or LastExpandedWidth, Duration)
+        else
+            Window:SetSidebarWidth(State and WindowInfo.SidebarCompactWidth or LastExpandedWidth)
+        end
+    end
+
+    function Window:ToggleCompact(Duration)
+        Window:SetCompact(not IsCompact, Duration)
+    end
+
+    function Window:GetSidebarWidth()
+        return Tabs.Size.X.Offset
+    end
+
+    function Window:SetSidebarWidth(Width)
+        Width = SetSidebarWidthRaw(Width)
+
         if WindowInfo.EnableCompacting then
             ApplyCompact()
         end
         if not IsCompact then
             LastExpandedWidth = Width
         end
+    end
+
+    if WindowInfo.EnableCompacting and WindowInfo.EnableTitleToggleCompact then
+        local TitlePressPos
+        local TitlePressed = false
+        local TitleInputChanged
+
+        TitleHolder.Active = true
+
+        TitleHolder.InputBegan:Connect(function(Input: InputObject)
+            if not IsClickInput(Input) then
+                return
+            end
+            TitlePressed = true
+            TitlePressPos = Input.Position
+        end)
+
+        TitleInputChanged = TitleHolder.InputEnded:Connect(function(Input: InputObject)
+            if not TitlePressed then
+                return
+            end
+            TitlePressed = false
+
+            local Moved = Input.Position - TitlePressPos
+            if Moved.Magnitude > 5 then
+                return
+            end
+
+            Window:ToggleCompact()
+        end)
+        Library:GiveSignal(TitleInputChanged)
+
+        TitleHolder.Destroying:Once(function()
+            if TitleInputChanged and TitleInputChanged.Connected then
+                TitleInputChanged:Disconnect()
+            end
+        end)
     end
 
     function Window:ShowTabInfo(Name, Description)

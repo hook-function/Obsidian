@@ -833,6 +833,7 @@ export type Window = {
     GetSidebarWidth: (self: Window) -> number,
     SetSidebarWidth: (self: Window, Width: number) -> (),
     SetCompact: (self: Window, State: boolean, Duration: number?) -> (),
+    ToggleCompact: (self: Window, Duration: number?) -> (),
     ShowTabInfo: (self: Window, Name: string, Description: string) -> (),
     HideTabInfo: (self: Window) -> (),
     AddTab: (
@@ -1054,6 +1055,7 @@ export type Library = {
             UnlockMouseWhileOpen: boolean?,
             EnableSidebarResize: boolean?,
             EnableCompacting: boolean?,
+            EnableTitleToggleCompact: boolean?,
             DisableCompactingSnap: boolean?,
             SidebarCompacted: boolean?,
             MinContainerWidth: number?,
